@@ -139,6 +139,15 @@ def estimate_params(snaps):
     )
     med_log_play = lps[len(lps) // 2] if lps else 0.0
 
+    # Playing count from the last snapshot row, keyed by uid.
+    # Using the snapshot row directly (rather than play_series[-1]) ensures
+    # we get the value contemporaneous with the last chart even when a game
+    # has historical play_series entries from before it briefly left the chart.
+    last_snap_play = {
+        r["universe_id"]: (r.get("playing") or 0)
+        for r in snaps[-1]["up_and_coming"]
+    }
+
     drifts = {}
     for uid, obs in series.items():
         # Appeal slope (trailing 96h, shrunk n/(n+2), capped ±0.03)
@@ -159,8 +168,9 @@ def estimate_params(snaps):
             ys = [math.log(max(p, 1)) for _, p in trail]
             gplay = min(max(_slope(xs, ys), -GPLAY_CAP), GPLAY_CAP)
 
-        # Playing level vs chart median (lpr)
-        last_play = play_series.get(uid, [[None, 0]])[-1][1]
+        # Playing level vs chart median (lpr).
+        # Games not in the last snapshot (dropped off chart) get lpr=0.
+        last_play = last_snap_play.get(uid, 0)
         lpr = (math.log(max(last_play, 1)) - med_log_play) if last_play else 0.0
 
         age_h = max((t_end - first_seen[uid]).total_seconds() / 3600.0, 1.0)
