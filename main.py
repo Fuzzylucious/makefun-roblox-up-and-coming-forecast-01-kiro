@@ -15,11 +15,11 @@ Drift regression (OLS on 4115 consecutive-pair transitions from the
 46-snapshot archive, R² = 0.120):
   E[da/h] = -0.032983
            + 0.446186 * appeal_slope_96h   (trailing 96h, shrunk, capped ±0.03)
-           + 0.206887 * logplaying_slope_30h (trailing 30h, shrunk, clipped ±0.05)
+           + 0.410000 * logplaying_slope_30h (trailing 30h, shrunk, clipped ±0.05; tuned 2×)
            + 0.010780 * log(rank)
            - 0.002263 * log(chart_age_h)
            + 0.004446 * lpr               (log(playing) − median log(playing))
-  scaled by 1.2.
+  scaled by 1.8.  Temperature=1.1 flattens the per-slot distribution.
 
 Standard library only, no network, deterministic (fixed seed).
 Two runs produce byte-identical output.
@@ -42,7 +42,7 @@ HORIZON_HOURS      = 72
 SIGMA              = 0.10          # Student-t scale per √hour (known games)
 PHANTOM_SIGMA      = 0.35          # entrants diffuse faster
 T_DF               = 12
-DRIFT_SCALE        = 1.2
+DRIFT_SCALE        = 1.8
 PERSIST_W          = 0.10
 DRIFT_WINDOW_H     = 96.0
 GPLAY_WINDOW_H     = 30.0
@@ -52,6 +52,7 @@ GPLAY_CAP          = 0.050         # |log-playing slope| per hour
 ENTRANT_DRIFT      = 0.012
 ENTRANT_HALFLIFE_H = 24.0
 SMOOTH_EPS         = 0.02
+TEMPERATURE        = 1.1          # flatten raw count distribution (raw^(1/T) before smoothing)
 P_FLOOR            = 0.0015
 P_CAP              = 0.65
 PLACE_SUM_CAP      = 0.95
@@ -59,7 +60,7 @@ PLACE_SUM_CAP      = 0.95
 # Full-archive OLS regression coefficients (fit on 4115 transitions, R²=0.120)
 REG_CONST    = -0.032983
 REG_SLOPE    =  0.446186   # appeal slope 96h
-REG_GPLAY    =  0.206887   # log-playing slope 30h
+REG_GPLAY    =  0.410000   # log-playing slope 30h (tuned: 2× base 0.206887)
 REG_LOG_RANK =  0.010780   # log(rank)
 REG_LOG_AGE  = -0.002263   # log(chart-age hours)
 REG_LPR      =  0.004446   # log(playing) − median log(playing)
@@ -281,6 +282,9 @@ def build_forecast(counts, total_slots, n_games, places, last_chart):
         rows = []
         for uid, arr in counts.items():
             p = arr[place] / total_slots if total_slots else 0.0
+            # temperature: flatten distribution slightly (raw^(1/T))
+            if TEMPERATURE != 1.0 and p > 0:
+                p = p ** (1.0 / TEMPERATURE)
             # Smooth with a flat prior so no plausible game is at zero
             p = (1.0 - SMOOTH_EPS) * p + SMOOTH_EPS * (1.0 / max(n_games, 1))
             if p >= P_FLOOR:
